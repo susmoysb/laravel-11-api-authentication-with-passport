@@ -114,4 +114,52 @@ class AuthController extends Controller
 
         return self::withUnauthorized(self::MESSAGES['invalid_credentials']);
     }
+
+    /**
+     * Get the login sessions for the authenticated user.
+     *
+     * This method retrieves all active access tokens for the authenticated user.
+     * It returns the token details including the creation time, expire time
+     *
+     * @param \Illuminate\Http\Request $request The current request instance.
+     *
+     * @return \Illuminate\Http\JsonResponse The response containing the list of active login sessions.
+     */
+    public function loginSessions(Request $request): JsonResponse
+    {
+        // Retrieve tokens that are not revoked and have not expired.
+        $tokens = $request->user()->tokens()
+            ->where('revoked', false)
+            ->where('expires_at', '>', Carbon::now())
+            ->orderByDesc('created_at')
+            ->get();
+
+        return self::withOk('Active login sessions ' . self::MESSAGES['retrieve'], $tokens);
+    }
+
+    /**
+     * Logout the authenticated user by revoking their access token.
+     *
+     * If tokenId is null, revokes the current session.
+     * If tokenId is provided, revokes the specified session.
+     *
+     * @param \Illuminate\Http\Request $request The current request instance.
+     *
+     * @param int|null $tokenId The ID of the token to revoke, or null to revoke the current token.
+     *
+     * @return \Illuminate\Http\JsonResponse A JSON response indicating the result of the logout operation.
+     */
+    public function logout(Request $request, $tokenId = null): JsonResponse
+    {
+        // Use the current token if no token ID is provided, otherwise find the specific token
+        $token = $tokenId
+            ? $request->user()->tokens()->where('id', $tokenId)->where('revoked', false)->where('expires_at', '>', Carbon::now())->first()
+            : $request->user()->token();
+
+        if ($token and $token->revoke()) {
+            return self::withOk('User ' . self::MESSAGES['logout']);
+        }
+
+        return self::withNotFound(self::MESSAGES['token_not_found']);
+    }
 }
