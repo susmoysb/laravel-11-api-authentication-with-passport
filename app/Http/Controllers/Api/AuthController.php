@@ -9,6 +9,7 @@ use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -62,5 +63,55 @@ class AuthController extends Controller
             DB::rollBack();
             return self::withBadRequest(self::MESSAGES['system_error'], $e->getMessage() . ' ' . get_class($e));
         }
+    }
+
+    /**
+     * Handle the login request.
+     *
+     * This method validates the login credentials provided in the request.
+     * It accepts a 'login' field which can be a username, employee_id, or email, and a 'password' field
+     * If the credentials are valid, it generates a new access token for the user and returns it along with user data.
+     * If the credentials are invalid, it returns an unauthorized response.
+     *
+     * @param \Illuminate\Http\Request $request The incoming request instance.
+     *
+     * @return \Illuminate\Http\JsonResponse The response containing user data and access token, or an unauthorized response.
+     *
+     * @throws \Illuminate\Validation\ValidationException If the validation fails.
+     */
+    public function login(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'login' => ['required', 'string'], // Can be username, employee_id, or email
+            'password' => ['required', 'string'],
+        ]);
+
+        $validatedData = $validator->validated();
+
+        $login = $validatedData['login'];
+        $password = $validatedData['password'];
+
+        $user = User::where('username', $login)
+            ->orWhere('employee_id', $login)
+            ->orWhere('email', $login)
+            ->first();
+
+        if ($user && Hash::check($password, $user->password)) {
+
+            // Create a new access token
+            $tokenResult = $user->createToken('auth_token');
+
+            return self::withOk(
+                'User ' . self::MESSAGES['login'],
+                [
+                    'user' => $user,
+                    'token' => $tokenResult->accessToken,
+                    'token_type' => 'Bearer',
+                    'expires_at' => Carbon::parse($tokenResult->token->expires_at)->toDateTimeString(),
+                ]
+            );
+        }
+
+        return self::withUnauthorized(self::MESSAGES['invalid_credentials']);
     }
 }
